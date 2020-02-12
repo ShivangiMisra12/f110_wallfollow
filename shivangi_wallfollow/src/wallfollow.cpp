@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>
 #include <ackermann_msgs/AckermannDriveStamped.h>
-#include <std_msgs/Bool.h>
+#include <std_msgs/Float32.h>
 #include <cmath>
 #include <stdlib.h>
 
@@ -30,21 +30,23 @@ public:
 		n = ros::NodeHandle();
 		ack_pub = n.advertise<ackermann_msgs::AckermannDriveStamped>("nav", 1);
 		scan_sub = n.subscribe("scan", 100, &WallFollow::scan_callback, this);
-		gen_pub = n.advertise<std_msgs::Bool>("debug", 1);
+		gen_pub = n.advertise<std_msgs::Float32>("debug", 1);
 	}
 
 	~WallFollow(){}
 
 	void scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg){
 		ackermann_msgs::AckermannDriveStamped drive_val;
-		std_msgs::Bool dist;
+		std_msgs::Float32 dist;
 		float inc = scan_msg->angle_increment;
-
-		int left_wall_1 = floor((3*PI)/(2*inc));
-		int left_wall_2 = floor((11*PI)/(6*inc));
+		float straight_angle = 0.5*(scan_msg->angle_max + scan_msg->angle_min);
+		int left_wall_1 = floor((straight_angle + 0.5*PI - scan_msg->angle_min)/inc);
+		int left_wall_2 = floor((straight_angle + 0.25*PI - scan_msg->angle_min)/inc);
+		// int left_wall_1 = floor((3*PI)/(2*inc));
+		// int left_wall_2 = floor((11*PI)/(6*inc));
 		float left_range_1 = scan_msg->ranges[left_wall_1];
 		float left_range_2 = scan_msg->ranges[left_wall_2]; 
- 		float steer_angle_1 = atan((left_range_2*cos(PI/3) - left_range_1)/(left_range_2*sin(PI/3)));
+ 		float steer_angle_1 = atan((left_range_2*cos(PI/4) - left_range_1)/(left_range_2*sin(PI/4)));
  		float dist_to_leftwall = left_range_1*cos(steer_angle_1);
 
  		int right_wall_1 = floor((PI)/(2*inc));
@@ -52,27 +54,33 @@ public:
 		float right_range_1 = scan_msg->ranges[right_wall_1];
 		
  		if(abs(steer_angle_1) <= (PI/18)){
- 			velocity = 1.5;
- 			lookahead_dist = 0.0;
- 			kp = 0.4;
- 			kd = 1.1;
+ 			velocity = 4;
+ 			lookahead_dist = 0.10;
+ 			kp = 3.0;
+ 			kd = 0.1;
  			ki = 0.0;
- 			dist_to_maintain = 0.7;
+ 			dist_to_maintain = 1.0;
 
  		}else if(abs(steer_angle_1) > (PI/18) && abs(steer_angle_1) <= (PI/9)){
- 			velocity = 1.0;
+ 			velocity = 3.0;
  			lookahead_dist = 0.1;
-            dist_to_maintain = 0.7;
- 			kp = 0.5;
- 			kd = 10.0;
- 			ki = 0.0;
+            dist_to_maintain = 1.0;
+            kp = 3.0;
+            kd = 0.1;
+            ki = 0.0;
+ 			// kp = 0.9;
+ 			// kd = 16.0;
+ 			// ki = 0.0;
  		}else{
- 			velocity = 0.5;
- 			lookahead_dist = 0.01;
- 			dist_to_maintain = 0.7;
- 			kp = 0.5;
- 			kd = 10.0;
+ 			velocity = 1.5;
+ 			lookahead_dist = 0.1;
+ 			dist_to_maintain = 1.0;
+ 			kp = 3.0;
+ 			kd = 0.1;
  			ki = 0.0;
+ 			// kp = 0.9;
+ 			// kd = 3.5;
+ 			// ki = 0.0;
  		}
 
  		float dist_to_leftwall_la = dist_to_leftwall + lookahead_dist*sin(steer_angle_1);
@@ -81,7 +89,7 @@ public:
  		float d_error = p_error - p_error_last; 
  		float i_error = i_error + p_error;
 
- 		bool is_special = detect_special_crosssection(steer_input, scan_msg);
+ 		//bool is_special = detect_special_crosssection(steer_input, scan_msg);
 
  		steer_input = -(kp*p_error - kd*d_error + ki*i_error);
  		if(steer_input>= 0.43){
@@ -92,7 +100,7 @@ public:
  		}
  		drive_val.drive.steering_angle = steer_input;
  		drive_val.drive.speed = velocity;
-        dist.data = is_special;
+        	dist.data = scan_msg->ranges[letf_wall_1];
  		ack_pub.publish(drive_val);
  		gen_pub.publish(dist);
  		p_error_last = p_error;
